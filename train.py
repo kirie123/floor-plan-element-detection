@@ -1,17 +1,9 @@
 # train.py
 import torch
-from torch.utils.data import DataLoader
-
-
-
-
-
 from data.detection_dataset import DetectionDataset
 from loss import detection_loss
 
 from models.default_model import DummyModel
-
-
 
 
 from torch.utils.data import DataLoader
@@ -24,7 +16,7 @@ from pathlib import Path
 from validate import validate_model, calculate_metrics
 
 
-def train_one_epoch(model, dataloader, optimizer, device, epoch, print_freq=10):
+def train_one_epoch(model, dataloader, optimizer, device, epoch, print_freq=10, stride = 16):
     model.train()
     total_loss = 0
     hm_loss_total = 0
@@ -42,7 +34,7 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, print_freq=10):
         optimizer.zero_grad()
 
         outputs = model(images)
-        loss, loss_dict = detection_loss(outputs, targets, num_classes=len(class_names))
+        loss, loss_dict = detection_loss(outputs, targets, num_classes=len(class_names), stride = stride)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -133,7 +125,8 @@ def main():
                             collate_fn=custom_collate_fn)
 
     # 模型（先用你的DummyModel测试，后续替换为DINOv3）
-    model = DummyModel(num_classes=num_classes).to(device)
+    stride = 16
+    model = DummyModel(num_classes=num_classes, stride = stride).to(device)
     # # 冻结主干网络
     # for param in model.backbone.parameters():
     #     param.requires_grad = False
@@ -145,7 +138,7 @@ def main():
     #     {'params': model.wh_head.parameters(), 'lr': 1e-4},
     #     {'params': model.offset_head.parameters(), 'lr': 1e-4},
     # ], weight_decay=1e-3)
-    max_epoch = 200
+    max_epoch = 50
     scheduler = CosineAnnealingLR(optimizer, T_max=max_epoch, eta_min=1e-6)
 
     # 训练循环
@@ -156,7 +149,7 @@ def main():
         print(f"\n--- Epoch {epoch + 1}/{max_epoch} ---")
 
         # 训练
-        train_losses = train_one_epoch(model, train_loader, optimizer, device, epoch + 1)
+        train_losses = train_one_epoch(model, train_loader, optimizer, device, epoch + 1, stride = stride)
         print(f"训练损失 - 总: {train_losses['total']:.4f}, "
               f"热力图: {train_losses['hm']:.4f}, "
               f"宽高: {train_losses['wh']:.4f}, "
@@ -165,14 +158,14 @@ def main():
         # 验证
         if has_validation and (epoch + 1) % val_interval == 0:
             print("开始验证...")
-            val_losses = validate_model(model, val_loader, device, num_classes)
+            val_losses = validate_model(model, val_loader, device, num_classes, stride = stride)
             print(f"验证损失 - 总: {val_losses['total']:.4f}, "
                   f"热力图: {val_losses['hm']:.4f}, "
                   f"宽高: {val_losses['wh']:.4f}, "
                   f"偏移: {val_losses['off']:.4f}")
 
             # 计算指标
-            metrics = calculate_metrics(model, val_loader, device, class_names)
+            metrics = calculate_metrics(model, val_loader, device, class_names, stride = stride)
             print(f"验证指标 - mAP: {metrics['mAP']:.4f}")
             for class_name, ap in metrics['AP_per_class'].items():
                 print(f"  {class_name} AP: {ap:.4f}")

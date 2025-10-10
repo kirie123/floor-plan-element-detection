@@ -153,7 +153,7 @@ def predict_image(model, image_path, class_names, device, confidence_threshold=0
         outputs = model(original_image)
 
     # 解码输出
-    detections = decode_outputs(outputs, confidence_threshold=confidence_threshold, img_size=img_size)
+    detections = decode_outputs(outputs, confidence_threshold=confidence_threshold, img_size=img_size, stride = 16)
     batch_detections = detections[0]  # 取第一个batch
 
     # 转换为DataFrame
@@ -204,7 +204,7 @@ def predict_batch(model, image_dir, output_dir, class_names, device, confidence_
 
 
 
-def validate_model(model, val_loader, device, num_classes, img_size=1024):
+def validate_model(model, val_loader, device, num_classes, img_size=1024, stride = 16):
     """
     在验证集上评估模型
     """
@@ -219,7 +219,7 @@ def validate_model(model, val_loader, device, num_classes, img_size=1024):
             images = images.to(device)
 
             outputs = model(images)
-            loss, loss_dict = detection_loss(outputs, targets, num_classes=num_classes, img_size=img_size)
+            loss, loss_dict = detection_loss(outputs, targets, num_classes=num_classes,stride = stride, img_size=img_size)
 
             total_val_loss += loss_dict["total"].item()
             hm_val_loss += loss_dict["hm"].item()
@@ -240,7 +240,7 @@ def validate_model(model, val_loader, device, num_classes, img_size=1024):
     }
 
 
-def calculate_metrics(model, val_loader, device, class_names, iou_threshold=0.5, img_size=1024):
+def calculate_metrics(model, val_loader, device, class_names,stride = 16, iou_threshold=0.5, img_size=1024):
     """
     计算更详细的评估指标（mAP等）
     """
@@ -254,7 +254,7 @@ def calculate_metrics(model, val_loader, device, class_names, iou_threshold=0.5,
             outputs = model(images)
 
             # 解码预测
-            predictions = decode_outputs(outputs, confidence_threshold=0.1, img_size=img_size)
+            predictions = decode_outputs(outputs, confidence_threshold=0.1, img_size=img_size, stride = stride)
 
             # 收集预测和目标
             for i, (preds, target) in enumerate(zip(predictions, targets)):

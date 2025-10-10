@@ -26,7 +26,7 @@ def reg_l1_loss(pred, target, mask):
     return (torch.abs(pred - target) * mask).sum() / (mask.sum() + 1e-6)
 
 
-def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024):
+def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024, viz_dir = "heatmap_viz"):
     """
     CenterNet style loss
     """
@@ -35,6 +35,9 @@ def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024):
     device = outputs["heatmap"].device
     if debug:
         print(f"\n[损失调试] 批次大小: {B}, 特征图尺寸: {H}x{W}")
+        import os
+        os.makedirs(viz_dir, exist_ok=True)
+        import matplotlib.pyplot as plt
     # 特征图尺寸
     feat_size = img_size / stride  # 1024/16 = 64
     # 初始化目标张量
@@ -78,14 +81,18 @@ def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024):
                 draw_gaussian(hm_target[b, cls_id], (cx_int, cy_int), radius, device)
 
                 # 宽高目标
-                w_feat = (x2 - x1)
-                h_feat = (y2 - y1)
-                wh_target[b, 0, cy_int, cx_int] = torch.log(w_feat + 1e-6)
-                wh_target[b, 1, cy_int, cx_int] = torch.log(h_feat + 1e-6)
+                w_feat = torch.log((x2 - x1) + 1e-6)
+                h_feat = torch.log((y2 - y1) + 1e-6)
+                # if cls_id == 0:# WALL
+                #     print(f"墙宽高： {w_feat} , {h_feat}")
+                wh_target[b, 0, cy_int, cx_int] = w_feat
+                wh_target[b, 1, cy_int, cx_int] = h_feat
 
                 # 偏移目标
-                offset_target[b, 0, cy_int, cx_int] = cx - cx_int
-                offset_target[b, 1, cy_int, cx_int] = cy - cy_int
+                offset_x =  cx - cx_int
+                offset_y = cy - cy_int
+                offset_target[b, 0, cy_int, cx_int] = offset_x
+                offset_target[b, 1, cy_int, cx_int] = offset_y
 
                 mask[b, cy_int, cx_int] = True
 
@@ -128,7 +135,12 @@ def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024):
 
     # 在计算热力图损失时添加类别权重
     class_weights = torch.tensor([1.5, 0.8, 2.0, 0.7], device=device)  # wall, door, window, column
-
+    if debug:
+        # 可视化第一个batch的第一个类别的热力图目标
+        import matplotlib.pyplot as plt
+        plt.imshow(hm_target[0, 0].cpu().numpy())
+        plt.colorbar()
+        plt.show()
     # 计算损失
     hm_pred = torch.sigmoid(outputs["heatmap"])
     #hm_loss = focal_loss(hm_pred, hm_target)

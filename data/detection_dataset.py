@@ -1,12 +1,4 @@
 
-
-
-
-def convert_class(cls_name):
-    if 'WALL'in cls_name:
-        return 'wall'
-    return cls_name.lower()
-
 from PIL import Image
 import pandas as pd
 import torchvision.transforms as T
@@ -14,6 +6,10 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
+def convert_class(cls_name):
+    if 'WALL'in cls_name:
+        return 'wall'
+    return cls_name.lower()
 
 class DetectionDataset(Dataset):
     def __init__(self, img_dir: str, csv_dir: str, class_names: list, training=True, img_size=1024):
