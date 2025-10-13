@@ -75,10 +75,15 @@ def detection_loss(outputs, targets, num_classes=4, stride=16, img_size=1024, vi
             # 确保在特征图范围内
             if 0 <= cx_int < W and 0 <= cy_int < H:
                 assigned_objects += 1
-                # 热力图目标（高斯核）
-                radius = gaussian_radius((y2 - y1) , (x2 - x1) )
-                radius = max(0, int(radius))
-                draw_gaussian(hm_target[b, cls_id], (cx_int, cy_int), radius, device)
+                # # 热力图目标（高斯核）
+                # radius = gaussian_radius((y2 - y1) , (x2 - x1) )
+                # radius = max(0, int(radius))
+                # draw_gaussian(hm_target[b, cls_id], (cx_int, cy_int), radius, device)
+                # 热力图目标（椭圆高斯核）
+                h, w = (y2 - y1).item(), (x2 - x1).item()
+                sigma_x = max(w, 1.0) / 6.0  # 可根据效果调整分母，如4.0, 6.0, 8.0
+                sigma_y = max(h, 1.0) / 6.0
+                draw_elliptical_gaussian(hm_target[b, cls_id], (cx_int, cy_int), sigma_x, sigma_y, device)
 
                 # 宽高目标
                 w_feat = torch.log((x2 - x1) + 1e-6)
@@ -215,6 +220,39 @@ def draw_gaussian(heatmap, center, radius, device, k=1):
 
     torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
 
+
+def draw_elliptical_gaussian(heatmap, center, sigma_x, sigma_y, device, k=1):
+    """
+    在热力图上绘制椭圆高斯核。
+    """
+    # 根据sigma确定绘制区域的大小 (3*sigma 覆盖约99%的区域)
+    radius_x = int(3 * sigma_x)
+    radius_y = int(3 * sigma_y)
+
+    # 生成网格
+    y, x = torch.meshgrid(
+        torch.arange(-radius_y, radius_y + 1, dtype=torch.float32, device=device),
+        torch.arange(-radius_x, radius_x + 1, dtype=torch.float32, device=device),
+        indexing='ij'
+    )
+
+    # 计算椭圆高斯: exp(-(x^2/(2*sigma_x^2) + y^2/(2*sigma_y^2)))
+    gaussian = torch.exp(-(x * x / (2 * sigma_x * sigma_x) + y * y / (2 * sigma_y * sigma_y)))
+    gaussian[gaussian < torch.finfo(gaussian.dtype).eps * gaussian.max()] = 0
+
+    x_c, y_c = center
+    height, width = heatmap.shape
+
+    # 确定裁剪边界，防止越界
+    left, right = min(x_c, radius_x), min(width - x_c, radius_x + 1)
+    top, bottom = min(y_c, radius_y), min(height - y_c, radius_y + 1)
+
+    # 裁剪热力图和高斯核到有效区域
+    masked_heatmap = heatmap[y_c - top:y_c + bottom, x_c - left:x_c + right]
+    masked_gaussian = gaussian[radius_y - top:radius_y + bottom, radius_x - left:radius_x + right]
+
+    # 使用torch.max进行原地更新
+    torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
 
 def gaussian2d(shape, sigma=1):
     """生成2D高斯核"""

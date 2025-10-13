@@ -188,12 +188,41 @@ class IntegratedDetector:
                     all_detections.append(detection_orig)
 
         # 简单的非极大值抑制去重
-        #filtered_detections = self.nms(all_detections, iou_threshold=0.2)
-        filtered_detections = all_detections
+        filtered_detections = self.category_aware_nms(all_detections, iou_threshold=0.4)
+        #filtered_detections = all_detections
         return filtered_detections
 
-    def nms(self, detections: List[Dict], iou_threshold: float = 0.5) -> List[Dict]:
-        """非极大值抑制去重"""
+    def category_aware_nms(self, detections: List[Dict], iou_threshold: float = 0.5) -> List[Dict]:
+        """按类别感知的非极大值抑制，对column类别进行合并"""
+        if not detections:
+            return []
+
+        # 按类别分组
+        detections_by_class = {}
+        for det in detections:
+            class_id = det['class_id']
+            if class_id not in detections_by_class:
+                detections_by_class[class_id] = []
+            detections_by_class[class_id].append(det)
+
+        filtered_detections = []
+
+        for class_id, class_detections in detections_by_class.items():
+            class_name = self.detection_class_names[class_id]
+
+            if class_name == "column":
+                # 对column类别进行合并
+                merged_detections = self.merge_columns(class_detections, iou_threshold)
+                filtered_detections.extend(merged_detections)
+            else:
+                # 对其他类别进行标准NMS
+                nms_detections = self.nms_for_class(class_detections, iou_threshold)
+                filtered_detections.extend(nms_detections)
+
+        return filtered_detections
+
+    def nms_for_class(self, detections: List[Dict], iou_threshold: float) -> List[Dict]:
+        """对单个类别进行标准非极大值抑制"""
         if not detections:
             return []
 
@@ -212,28 +241,83 @@ class IntegratedDetector:
 
         return keep
 
+    def merge_columns(self, detections: List[Dict], iou_threshold: float) -> List[Dict]:
+        """合并重叠的column检测框"""
+        if not detections:
+            return []
+
+        # 按置信度排序
+        detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
+
+        merged_groups = []
+
+        while detections:
+            # 取当前最高置信度的检测作为种子
+            seed = detections.pop(0)
+            current_group = [seed]
+
+            # 寻找与种子重叠的所有检测
+            remaining = []
+            for det in detections:
+                iou = self.calculate_iou(seed, det)
+                if iou > iou_threshold:
+                    current_group.append(det)
+                else:
+                    remaining.append(det)
+
+            # 合并当前组中的所有检测框
+            if len(current_group) > 1:
+                # 计算合并后的包围框（取所有框的并集）
+                xmin = min(det['xmin'] for det in current_group)
+                ymin = min(det['ymin'] for det in current_group)
+                xmax = max(det['xmax'] for det in current_group)
+                ymax = max(det['ymax'] for det in current_group)
+
+                # 取组内最高置信度
+                confidence = max(det['confidence'] for det in current_group)
+
+                # 创建合并后的检测结果
+                merged_detection = {
+                    'xmin': xmin,
+                    'ymin': ymin,
+                    'xmax': xmax,
+                    'ymax': ymax,
+                    'class': 'column',
+                    'confidence': confidence,
+                    'class_id': current_group[0]['class_id']  # 保持相同的class_id
+                }
+                merged_groups.append(merged_detection)
+            else:
+                # 如果没有重叠的，直接保留原检测
+                merged_groups.append(seed)
+
+            detections = remaining
+
+        return merged_groups
+
     def calculate_iou(self, box1: Dict, box2: Dict) -> float:
-        """计算两个边界框的IoU"""
-        x1_min, y1_min, x1_max, y1_max = box1['xmin'], box1['ymin'], box1['xmax'], box1['ymax']
-        x2_min, y2_min, x2_max, y2_max = box2['xmin'], box2['ymin'], box2['xmax'], box2['ymax']
-
+        """计算两个包围框的交并比"""
         # 计算交集区域
-        inter_xmin = max(x1_min, x2_min)
-        inter_ymin = max(y1_min, y2_min)
-        inter_xmax = min(x1_max, x2_max)
-        inter_ymax = min(y1_max, y2_max)
+        x1 = max(box1['xmin'], box2['xmin'])
+        y1 = max(box1['ymin'], box2['ymin'])
+        x2 = min(box1['xmax'], box2['xmax'])
+        y2 = min(box1['ymax'], box2['ymax'])
 
-        if inter_xmax <= inter_xmin or inter_ymax <= inter_ymin:
+        # 计算交集面积
+        intersection = max(0, x2 - x1) * max(0, y2 - y1)
+
+        # 计算各自面积
+        area1 = (box1['xmax'] - box1['xmin']) * (box1['ymax'] - box1['ymin'])
+        area2 = (box2['xmax'] - box2['xmin']) * (box2['ymax'] - box2['ymin'])
+
+        # 计算并集面积
+        union = area1 + area2 - intersection
+
+        # 避免除以零
+        if union == 0:
             return 0.0
 
-        inter_area = (inter_xmax - inter_xmin) * (inter_ymax - inter_ymin)
-
-        # 计算并集区域
-        area1 = (x1_max - x1_min) * (y1_max - y1_min)
-        area2 = (x2_max - x2_min) * (y2_max - y2_min)
-        union_area = area1 + area2 - inter_area
-
-        return inter_area / union_area if union_area > 0 else 0.0
+        return intersection / union
 
     def detect(self, image_path: str, confidence_threshold: float = 0.3) -> List[Dict]:
         """完整的检测流程"""
@@ -277,6 +361,7 @@ class IntegratedDetector:
 
                     # 更新检测结果
                     detection['class'] = classification_result['class_name'].lower()
+                    #detection['class'] = 'wall1'
                     detection['wall_confidence'] = classification_result['confidence']
                     wall_count += 1
 
@@ -302,7 +387,7 @@ class DummyDetector(IntegratedDetector):
         检测接口，返回Shape对象列表
         为了兼容你的服务框架
         """
-        detections = super().detect(image_path, confidence_threshold=0.3)
+        detections = super().detect(image_path, confidence_threshold=0.5)
 
         # 转换为Shape对象 - 根据Shape类定义修正格式
         shapes = []

@@ -175,7 +175,7 @@ def validate_jsonl_format(jsonl_file: str):
 # 使用示例
 if __name__ == "__main__":
     # 你的CSV数据目录
-    input_directory = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\验证集图片_新标注"
+    input_directory = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\验证集图片_Karle_7"
     output_jsonl = "output/converted_annotations.jsonl"
 
     # 转换CSV到JSONL
