@@ -138,7 +138,7 @@ def main():
     #     {'params': model.wh_head.parameters(), 'lr': 1e-4},
     #     {'params': model.offset_head.parameters(), 'lr': 1e-4},
     # ], weight_decay=1e-3)
-    max_epoch = 50
+    max_epoch = 200
     scheduler = CosineAnnealingLR(optimizer, T_max=max_epoch, eta_min=1e-6)
 
     # 训练循环

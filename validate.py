@@ -25,8 +25,8 @@ def decode_outputs(outputs, confidence_threshold=0.3, nms_threshold=0.5, stride=
     wh = outputs['wh']
     offset = outputs['offset']
     # 在 decode_outputs 函数开头添加
-    print(f"Max heatmap value: {heatmap.max().item():.4f}")
-    print(f"Mean heatmap value: {heatmap.mean().item():.4f}")
+    #print(f"Max heatmap value: {heatmap.max().item():.4f}")
+    #print(f"Mean heatmap value: {heatmap.mean().item():.4f}")
     batch_size, num_classes, H, W = heatmap.shape
     detections = []
 
@@ -474,8 +474,8 @@ def predict_multiple_images(image_dir, output_dir, model_path=None, class_names=
 # 使用示例
 if __name__ == "__main__":
     # 单张图像预测
-    image_path = "data/pred_images/dx18_slice_0016.jpg"
-    output_csv = "data/pred_images/dx18_slice_0016.csv"
+    image_path = "data/pred_images/aaa.png"
+    output_csv = "data/pred_images/aaa.csv"
 
     result_df = predict_single_image(
         image_path=image_path,
