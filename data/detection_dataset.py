@@ -14,6 +14,111 @@ from PIL import Image, ImageEnhance, ImageOps
 
 
 
+class GridMask:
+    """GridMask数据增强 - 网格状遮挡"""
+    
+    def __init__(self, use_h=True, use_w=True, rotate=1, offset=False, ratio=0.5, mode=0, prob=0.7):
+        """
+        Args:
+            use_h (bool): 是否在高度方向使用网格
+            use_w (bool): 是否在宽度方向使用网格
+            rotate (float): 旋转角度范围
+            offset (bool): 是否使用偏移
+            ratio (float): 网格密度比例
+            mode (int): 模式，0: 随机，1: 固定
+            prob (float): 应用概率
+        """
+        self.use_h = use_h
+        self.use_w = use_w
+        self.rotate = rotate
+        self.offset = offset
+        self.ratio = ratio
+        self.mode = mode
+        self.prob = prob
+        
+    def __call__(self, img, boxes=None, labels=None):
+        """
+        Args:
+            img: 输入图像 [H, W, C]
+            boxes: 边界框列表
+            labels: 标签列表
+        
+        Returns:
+            增强后的图像和标注
+        """
+        if random.random() > self.prob:
+            return img, boxes, labels
+            
+        h, w, c = img.shape
+        
+        # 生成网格掩码
+        mask = self.generate_grid_mask(h, w)
+        
+        # 应用掩码
+        if self.mode == 1:
+            # 模式1: 直接应用网格
+            img = img * mask
+        else:
+            # 模式0: 随机选择网格单元进行遮挡
+            img = self.apply_random_grid_mask(img, mask)
+        
+        return img, boxes, labels
+    
+    def generate_grid_mask(self, h, w):
+        """生成网格掩码"""
+        # 计算网格尺寸
+        grid_h = int(h * self.ratio)
+        grid_w = int(w * self.ratio)
+        
+        # 确保网格尺寸合理
+        grid_h = max(8, min(grid_h, h // 4))
+        grid_w = max(8, min(grid_w, w // 4))
+        
+        # 创建基础网格
+        mask = np.ones((h, w), dtype=np.float32)
+        
+        if self.use_h:
+            # 在高度方向添加网格线
+            for i in range(0, h, grid_h):
+                mask[i:min(i+2, h), :] = 0  # 2像素宽的网格线
+        
+        if self.use_w:
+            # 在宽度方向添加网格线
+            for j in range(0, w, grid_w):
+                mask[:, j:min(j+2, w)] = 0
+        
+        # 随机旋转
+        if self.rotate > 0:
+            angle = random.uniform(-self.rotate, self.rotate)
+            center = (w // 2, h // 2)
+            rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+            mask = cv2.warpAffine(mask, rotation_matrix, (w, h), flags=cv2.INTER_NEAREST)
+        
+        # 随机偏移
+        if self.offset:
+            dx = random.randint(-grid_w//2, grid_w//2)
+            dy = random.randint(-grid_h//2, grid_h//2)
+            translation_matrix = np.float32([[1, 0, dx], [0, 1, dy]])
+            mask = cv2.warpAffine(mask, translation_matrix, (w, h), flags=cv2.INTER_NEAREST)
+        
+        return np.expand_dims(mask, axis=2)  # [H, W, 1]
+    
+    def apply_random_grid_mask(self, img, mask):
+        """随机应用网格掩码"""
+        h, w, c = img.shape
+        
+        # 创建随机选择掩码
+        random_mask = np.random.random((h, w, 1)) > 0.5
+        
+        # 组合掩码
+        final_mask = np.where(random_mask, mask, 1.0)
+        
+        # 应用掩码
+        img = img * final_mask
+        
+        return img.astype(np.uint8)
+
+
 def convert_class(cls_name):
     if 'WALL'in cls_name:
         return 'wall'
@@ -206,7 +311,21 @@ class DetectionDataset(Dataset):
         self.class_to_idx = {name: i for i, name in enumerate(class_names)}
         self.training = training
         self.img_size = img_size
-        self.use_color_aug = True
+        self.use_mosaic = training and True
+        self.use_color_aug = training and True
+        self.use_mixup = training and False
+        self.mixup_alpha = 0.5  # MixUp参数
+        self.mosaic_prob = 0.75 # 75%概率使用Mosaic，可以根据效果调整
+        self.use_gridmask = training and True
+        self.gridmask = GridMask(
+            use_h=True,
+            use_w=True,
+            rotate=15,  # 旋转角度范围
+            offset=True,  # 使用偏移
+            ratio=0.6,  # 网格密度
+            mode=0,  # 随机模式
+            prob=0.99  # 应用概率
+        )
         # 收集样本
         self.samples = []
         for img_path in self.img_dir.glob("*.jpg"):
@@ -217,7 +336,7 @@ class DetectionDataset(Dataset):
         # 使用albumentations进行数据增强（同步处理图像和边界框）
         if training:
             self.transform = self.get_simple_transform()
-
+            self.default_transform = self.get_default_trasform()
             #self.transform = self.get_enhance_transform()
         else:
             self.transform = A.Compose([
@@ -229,6 +348,21 @@ class DetectionDataset(Dataset):
             ))
 
         print(f"✅ 加载 {len(self.samples)} 个样本")
+
+
+
+    def apply_gridmask(self, image):
+        """应用GridMask增强"""
+        if self.training and self.use_gridmask:
+            # 确保图像是uint8类型
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            # 应用GridMask
+            image, _, _ = self.gridmask(image)
+            # 确保返回正确的数据类型
+            if image.dtype != np.uint8:
+                image = image.astype(np.uint8)
+        return image
 
     def resize_image_and_boxes(self, image, boxes, target_size):
         """
@@ -294,6 +428,17 @@ class DetectionDataset(Dataset):
                 format='pascal_voc',  # 使用[x_min, y_min, x_max, y_max]格式
                 label_fields=['labels']
             ))
+    def get_default_trasform(self):
+        return A.Compose([
+            # 调整尺寸到img_size
+            A.Resize(self.img_size, self.img_size, always_apply=True),
+            # 标准化并转换为Tensor
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2()
+        ], bbox_params=A.BboxParams(
+            format='pascal_voc',  # 使用[x_min, y_min, x_max, y_max]格式
+            label_fields=['labels']
+        ))
     def get_simple_transform(self):
         """针对建筑平面图的简化增强"""
         return A.Compose([
@@ -302,10 +447,10 @@ class DetectionDataset(Dataset):
                 A.OneOf([
                     # 轻微的非均匀缩放
                     A.Affine(
-                        scale={"x": (0.4, 1.8), "y": (0.4, 1.8)},  # 横纵独立缩放
+                        scale={"x": (0.8, 1.8), "y": (0.8, 1.8)},  # 横纵独立缩放
                         translate_percent=(-0.05, 0.05),
                         rotate=(-10, 10),
-                        shear=(-5, 5),
+                        shear=(-3, 3),
                         p=0.5
                     ),
                     # 均匀缩放
@@ -318,9 +463,9 @@ class DetectionDataset(Dataset):
                 ], p=0.3),  # 30%概率应用缩放
                 # 弹性变换（模拟图纸变形）
                 A.ElasticTransform(
-                    alpha=30,
-                    sigma=5,
-                    alpha_affine=8,
+                    alpha=15,
+                    sigma=3,
+                    alpha_affine=5,
                     p=0.2
                 ),
                 # 几何变换 - 这些会同步调整边界框
@@ -336,13 +481,16 @@ class DetectionDataset(Dataset):
                 # 专门的颜色增强
                 A.Lambda(name='ColorAugmentation',
                          image=lambda image, **kwargs: self.apply_color_augmentation(image),
-                         p=0.8),  # 80%概率应用颜色增强
+                         p=0.4),  # 80%概率应用颜色增强
 
                 # 针对建筑平面图的增强
-                A.GaussNoise(var_limit=(10.0, 50.0), p=0.2),
-                A.Blur(blur_limit=3, p=0.2),
-
-
+                A.GaussNoise(var_limit=(2.0, 10.0), p=0.2),
+                #A.Blur(blur_limit=1, p=0.5),
+                # 在标准化之前添加GridMask
+                A.Lambda(
+                    image=lambda image, **kwargs: self.apply_gridmask(image),
+                    p=0.4  # GridMask的应用概率
+                ),
                 # 调整尺寸到img_size
                 A.Resize(self.img_size, self.img_size, always_apply=True),
                 # 标准化并转换为Tensor
@@ -353,8 +501,6 @@ class DetectionDataset(Dataset):
                 label_fields=['labels']
             ))
 
-
-
     def apply_color_augmentation(self, image, **kwargs):
         """应用自定义颜色增强"""
         if not self.training or not self.use_color_aug:
@@ -362,7 +508,7 @@ class DetectionDataset(Dataset):
 
         # 随机选择颜色增强策略
         strategies = [
-            lambda img: ColorAugmentation.apply_all_color_augmentations(img),
+            #lambda img: ColorAugmentation.apply_all_color_augmentations(img),
             lambda img: ColorAugmentation.change_background_color(img, prob=0.5),
             lambda img: ColorAugmentation.invert_background(img, prob=0.5),
             lambda img: ColorAugmentation.adjust_line_color(img, prob=0.6),
@@ -374,12 +520,254 @@ class DetectionDataset(Dataset):
         augmented_image = strategy(image)
 
         return augmented_image
+
+    def get_mixup_item(self, idx):
+        """MixUp数据增强 - 两张图像分别增强后混合"""
+        img_path1, csv_path1 = self.samples[idx]
+        if "example" in str(img_path1):
+            print(f"⚠️  警告：原始图像包含'example'，跳过MixUp: {img_path1.name}")
+            return self.load_single_sample(idx=idx,
+                                           img_path=img_path1,
+                                           csv_path=csv_path1, apply_transform=True)
+        # 随机选择另一张图像
+        max_attempts = 20
+        attempts = 0
+        while attempts < max_attempts:
+            idx2 = random.randint(0, len(self.samples) - 1)
+            if idx2 == idx:  # 确保不是同一张图像
+                continue
+            img_path2, csv_path2 = self.samples[idx2]
+            # 检查第二张图像路径是否包含"example"
+            if "example" not in str(img_path2):
+                break  # 找到合适的图像，跳出循环
+            attempts += 1
+        # 如果尝试多次后仍未找到合适的图像，放弃MixUp
+        if attempts >= max_attempts:
+            print(f"⚠️  警告：无法找到不包含'example'的图像进行MixUp，返回单张图像")
+            return self.load_single_sample(idx=idx,
+                                           img_path=img_path1,
+                                           csv_path=csv_path1, apply_transform=True)
+        # 加载两张图像并分别应用完整的数据增强
+        img_path1, csv_path1 = self.samples[idx]
+        img_path2, csv_path2 = self.samples[idx2]
+        # 分别应用完整的数据增强
+        image1, target1 = self.load_single_sample(idx=idx,
+                                                  img_path=img_path1,
+                                                  csv_path=csv_path1, apply_transform=False)
+        image2, target2 = self.load_single_sample(idx=idx,
+                                                  img_path=img_path2,
+                                                  csv_path=csv_path2, apply_transform=False)
+        # 生成混合系数
+        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+        # 混合图像（现在图像已经是tensor格式）
+        mixed_image = lam * image1 + (1 - lam) * image2
+        # 合并标签 - 对于目标检测，我们合并两张图像的所有边界框
+        mixed_boxes = torch.cat([target1["boxes"], target2["boxes"]], dim=0)
+        mixed_labels = torch.cat([target1["labels"], target2["labels"]], dim=0)
+        # 如果没有边界框，创建虚拟框
+        if len(mixed_boxes) == 0:
+            mixed_boxes = torch.tensor([[0, 0, 1, 1]], dtype=torch.float32)
+            mixed_labels = torch.tensor([0], dtype=torch.int64)
+        target = {
+            "boxes": mixed_boxes,
+            "labels": mixed_labels,
+            "image_id": torch.tensor([idx]),
+            "orig_size": torch.tensor([self.img_size, self.img_size]),
+            "mixup_lambda": torch.tensor([lam])  # 记录混合系数
+        }
+
+        return mixed_image, target
+    def get_valid_mixup_idx(self, idx):
+        img_path, csv_path = self.samples[idx]
+        if "example" in str(img_path):
+            return False
+        return True
+
+    def get_cutmix_item_strict(self, idx):
+        """CutMix增强 - 严格处理边界框重叠"""
+        img_path1, csv_path1 = self.samples[idx]
+        idx2 = self.get_valid_mixup_idx(idx)
+        img_path2, csv_path2 = self.samples[idx2]
+
+        image1, target1 = self.load_single_sample(idx, img_path1, csv_path1, apply_transform=True)
+        image2, target2 = self.load_single_sample(idx2, img_path2, csv_path2, apply_transform=True)
+
+        # 生成裁剪区域
+        h, w = image1.shape[1], image1.shape[2]
+        lam = np.random.beta(0.3, 0.3)
+
+        cut_ratio = np.sqrt(1. - lam)
+        cut_w = int(w * cut_ratio)
+        cut_h = int(h * cut_ratio)
+
+        cx = np.random.randint(w)
+        cy = np.random.randint(h)
+
+        x1 = np.clip(cx - cut_w // 2, 0, w)
+        y1 = np.clip(cy - cut_h // 2, 0, h)
+        x2 = np.clip(cx + cut_w // 2, 0, w)
+        y2 = np.clip(cy + cut_h // 2, 0, h)
+
+        # 执行CutMix
+        mixed_image = image1.clone()
+        mixed_image[:, y1:y2, x1:x2] = image2[:, y1:y2, x1:x2]
+
+        lam = 1 - ((x2 - x1) * (y2 - y1) / (w * h))
+
+        # 处理图像1的边界框 - 裁剪掉与裁剪区域重叠的部分
+        boxes1 = target1["boxes"]
+        labels1 = target1["labels"]
+
+        if len(boxes1) > 0:
+            boxes1_pixel = boxes1 * self.img_size
+            cropped_boxes1, cropped_labels1 = self.clip_boxes_outside_region(boxes1_pixel, labels1, x1, y1, x2, y2)
+            cropped_boxes1 = cropped_boxes1 / self.img_size
+        else:
+            cropped_boxes1 = boxes1
+            cropped_labels1 = labels1
+
+        # 处理图像2的边界框 - 只保留在裁剪区域内的部分
+        boxes2 = target2["boxes"]
+        labels2 = target2["labels"]
+
+        if len(boxes2) > 0:
+            boxes2_pixel = boxes2 * self.img_size
+            clipped_boxes2, clipped_labels2 = self.clip_boxes_inside_region(boxes2_pixel, labels2, x1, y1, x2, y2)
+
+            if len(clipped_boxes2) > 0:
+                # 调整坐标到混合图像中的位置
+                clipped_boxes2[:, 0] = clipped_boxes2[:, 0] - x1 + x1
+                clipped_boxes2[:, 1] = clipped_boxes2[:, 1] - y1 + y1
+                clipped_boxes2[:, 2] = clipped_boxes2[:, 2] - x1 + x1
+                clipped_boxes2[:, 3] = clipped_boxes2[:, 3] - y1 + y1
+                clipped_boxes2 = clipped_boxes2 / self.img_size
+        else:
+            clipped_boxes2 = boxes2
+            clipped_labels2 = labels2
+
+        # 合并边界框
+        mixed_boxes = torch.cat([cropped_boxes1, clipped_boxes2], dim=0)
+        mixed_labels = torch.cat([cropped_labels1, clipped_labels2], dim=0)
+
+        if len(mixed_boxes) == 0:
+            mixed_boxes = torch.tensor([[0, 0, 1, 1]], dtype=torch.float32)
+            mixed_labels = torch.tensor([0], dtype=torch.int64)
+
+        target = {
+            "boxes": mixed_boxes,
+            "labels": mixed_labels,
+            "image_id": torch.tensor([idx]),
+            "orig_size": torch.tensor([self.img_size, self.img_size]),
+            "cutmix_lambda": torch.tensor([lam])
+        }
+
+        return mixed_image, target
+
+    def clip_boxes_outside_region(self, boxes, labels, x1, y1, x2, y2, min_area_ratio=0.3):
+        """裁剪边界框，移除与指定区域重叠的部分"""
+        if len(boxes) == 0:
+            return boxes, labels
+
+        clipped_boxes = []
+        clipped_labels = []
+
+        for i, box in enumerate(boxes):
+            box_x1, box_y1, box_x2, box_y2 = box
+
+            # 计算与裁剪区域的交集
+            inter_x1 = max(box_x1, x1)
+            inter_y1 = max(box_y1, y1)
+            inter_x2 = min(box_x2, x2)
+            inter_y2 = min(box_y2, y2)
+
+            # 如果没有交集，保留整个边界框
+            if inter_x1 >= inter_x2 or inter_y1 >= inter_y2:
+                clipped_boxes.append(box.unsqueeze(0))
+                clipped_labels.append(labels[i].unsqueeze(0))
+                continue
+
+            # 计算原始面积和交集面积
+            orig_area = (box_x2 - box_x1) * (box_y2 - box_y1)
+            inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
+
+            # 如果重叠面积很小，保留整个边界框
+            if inter_area / orig_area < 0.1:
+                clipped_boxes.append(box.unsqueeze(0))
+                clipped_labels.append(labels[i].unsqueeze(0))
+                continue
+
+            # 如果重叠面积很大，丢弃整个边界框
+            if inter_area / orig_area > min_area_ratio:
+                continue
+
+            # 否则，裁剪边界框（这里简化处理，实际应该分割为多个边界框）
+            # 我们选择保留较大的部分
+            left_area = (x1 - box_x1) * (box_y2 - box_y1) if x1 > box_x1 else 0
+            right_area = (box_x2 - x2) * (box_y2 - box_y1) if box_x2 > x2 else 0
+            top_area = (box_x2 - box_x1) * (y1 - box_y1) if y1 > box_y1 else 0
+            bottom_area = (box_x2 - box_x1) * (box_y2 - y2) if box_y2 > y2 else 0
+
+            # 选择面积最大的部分
+            areas = [left_area, right_area, top_area, bottom_area]
+            max_area_idx = areas.index(max(areas))
+
+            if max_area_idx == 0 and left_area > 0:  # 左侧部分
+                new_box = torch.tensor([box_x1, box_y1, x1, box_y2], dtype=torch.float32)
+            elif max_area_idx == 1 and right_area > 0:  # 右侧部分
+                new_box = torch.tensor([x2, box_y1, box_x2, box_y2], dtype=torch.float32)
+            elif max_area_idx == 2 and top_area > 0:  # 顶部部分
+                new_box = torch.tensor([box_x1, box_y1, box_x2, y1], dtype=torch.float32)
+            elif max_area_idx == 3 and bottom_area > 0:  # 底部部分
+                new_box = torch.tensor([box_x1, y2, box_x2, box_y2], dtype=torch.float32)
+            else:
+                continue  # 没有合适的部分，丢弃
+
+            clipped_boxes.append(new_box.unsqueeze(0))
+            clipped_labels.append(labels[i].unsqueeze(0))
+
+        if len(clipped_boxes) > 0:
+            return torch.cat(clipped_boxes, dim=0), torch.cat(clipped_labels, dim=0)
+        else:
+            return torch.zeros((0, 4), dtype=torch.float32), torch.zeros((0,), dtype=torch.int64)
+
+    def clip_boxes_inside_region(self, boxes, labels, x1, y1, x2, y2):
+        """裁剪边界框，只保留在指定区域内的部分"""
+        if len(boxes) == 0:
+            return boxes, labels
+
+        clipped_boxes = []
+        clipped_labels = []
+
+        for i, box in enumerate(boxes):
+            box_x1, box_y1, box_x2, box_y2 = box
+
+            # 计算与裁剪区域的交集
+            inter_x1 = max(box_x1, x1)
+            inter_y1 = max(box_y1, y1)
+            inter_x2 = min(box_x2, x2)
+            inter_y2 = min(box_y2, y2)
+
+            # 如果没有交集，跳过
+            if inter_x1 >= inter_x2 or inter_y1 >= inter_y2:
+                continue
+
+            # 使用交集作为新的边界框
+            new_box = torch.tensor([inter_x1, inter_y1, inter_x2, inter_y2], dtype=torch.float32)
+
+            # 检查新边界框是否有效
+            if (inter_x2 - inter_x1) > 2 and (inter_y2 - inter_y1) > 2:  # 最小尺寸限制
+                clipped_boxes.append(new_box.unsqueeze(0))
+                clipped_labels.append(labels[i].unsqueeze(0))
+
+        if len(clipped_boxes) > 0:
+            return torch.cat(clipped_boxes, dim=0), torch.cat(clipped_labels, dim=0)
+        else:
+            return torch.zeros((0, 4), dtype=torch.float32), torch.zeros((0,), dtype=torch.int64)
+
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
-        img_path, csv_path = self.samples[idx]
-
+    def load_single_sample(self, idx, img_path, csv_path, apply_transform=True):
         # 使用OpenCV加载图像（albumentations需要numpy数组）
         image = cv2.imread(str(img_path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -410,11 +798,18 @@ class DetectionDataset(Dataset):
 
         # 应用数据增强（同步处理图像和边界框）
         if self.transform is not None:
-            transformed = self.transform(
-                image=image,
-                bboxes=boxes,
-                labels=labels
-            )
+            if apply_transform:
+                transformed = self.transform(
+                    image=image,
+                    bboxes=boxes,
+                    labels=labels
+                )
+            else:
+                transformed = self.default_transform(
+                    image=image,
+                    bboxes=boxes,
+                    labels=labels
+                )
             image = transformed['image']  # 已经是Tensor [3, H, W]
             boxes = transformed['bboxes']
             labels = transformed['labels']
@@ -440,6 +835,15 @@ class DetectionDataset(Dataset):
         }
 
         return image, target
+
+    def __getitem__(self, idx):
+        # 如果是训练模式且使用MixUp，随机选择另一张图像
+        if self.training and self.use_mixup and random.random() < 0.2:
+            return self.get_cutmix_item_strict(idx)
+
+        # 否则返回单张图像（应用完整transform）
+        img_path, csv_path = self.samples[idx]
+        return self.load_single_sample(idx, img_path, csv_path, apply_transform=True)
 
     def tensor_to_numpy(self, tensor_image):
         """

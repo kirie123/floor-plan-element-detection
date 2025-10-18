@@ -71,6 +71,7 @@ def test_single_image():
     # 测试图像路径
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\补充图片\\bc1.jpg"  # 替换为你的测试图像路径
     image_path = "data/pred_images/dx9_slice_0000_1536.jpg"
+    #image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\图例.jpg"
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\验证集图片\\dx18.jpg"
     # 进行检测
     detections = detector.detect(image_path, confidence_threshold=0.3)

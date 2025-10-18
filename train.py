@@ -161,9 +161,9 @@ def main():
     #     {'params': model.wh_head.parameters(), 'lr': 1e-4},
     #     {'params': model.offset_head.parameters(), 'lr': 1e-4},
     # ], weight_decay=1e-3)
-    max_epoch = 150
+    max_epoch = 500
     phase1_epochs = 0  # 阶段1：冻结主干，训练头
-    phase2_epochs = 150  # 阶段2：解冻主干，小学习率
+    phase2_epochs = 500  # 阶段2：解冻主干，小学习率
     #scheduler = CosineAnnealingLR(optimizer, T_max=max_epoch, eta_min=1e-6)
     # 阶段1：冻结主干网络
     print("=== 阶段1：冻结主干网络，只训练检测头 ===")
