@@ -66,8 +66,8 @@ def visualize_csv_annotations(image_dir: str, csv_dir: str, output_dir: str = "v
 
 if __name__ == "__main__":
     # ====== 修改以下路径为你自己的目录 ======
-    IMAGE_DIR = "pred_images"  # 图像文件夹
-    CSV_DIR = "pred_images"  # CSV 标注文件夹
+    IMAGE_DIR = "vis_images"  # 图像文件夹
+    CSV_DIR = "vis_images"  # CSV 标注文件夹
     OUTPUT_DIR = "vis_output"  # 输出文件夹
     # ======================================
 

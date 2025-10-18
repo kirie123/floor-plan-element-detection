@@ -9,7 +9,10 @@ from utils.shape import Shape, ImageAnnotation, save_image_annotations_to_jsonl
 
 def predict(input_path, output_path):
     # 初始化检测器（后续可替换为 YOLODetector 等）
-    detector = DummyDetector()
+    detector = DummyDetector(
+        detection_model_path="weights/best_detect_model.pth",
+        classification_model_path="weights/best_wall_classifier.pth"
+    )
 
     # 1. 在这里加载您的模型
     print("模型加载中...")

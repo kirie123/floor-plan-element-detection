@@ -121,8 +121,8 @@ class ImageSlicerForDetection:
 
                 if patch_annos:
                     base_name = img_path.stem
-                    new_img_name = f"{base_name}_slice_{slice_idx:04d}{img_path.suffix}"
-                    new_csv_name = f"{base_name}_slice_{slice_idx:04d}.csv"
+                    new_img_name = f"{base_name}_slice_{slice_idx:04d}_{self.slice_size}{img_path.suffix}"
+                    new_csv_name = f"{base_name}_slice_{slice_idx:04d}_{self.slice_size}.csv"
 
                     new_img_path = self.output_dir / new_img_name
                     new_csv_path = self.output_dir / new_csv_name
@@ -160,12 +160,34 @@ class ImageSlicerForDetection:
 
         print(f"🎉 切片完成！结果保存至: {self.output_dir.absolute()}")
 
+
+def create_multi_scale_slices(original_images_dir, output_base_dir, scales=[0.5, 0.75, 1.0, 1.25, 1.5]):
+    """
+    为原始高分辨率图像创建多尺度切片
+    """
+    for scale in scales:
+        output_dir = Path(output_base_dir) / f"scale_{scale}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        slicer = ImageSlicerForDetection(
+            input_dir=original_images_dir,
+            output_dir=str(output_dir),
+            slice_size=int(1024 * scale),  # 根据缩放调整切片尺寸
+            overlap=0.3,
+            min_area_ratio=0.1
+        )
+        slicer.run()
+
 if __name__ == "__main__":
-    slicer = ImageSlicerForDetection(
-        input_dir="images/",          # 含 wall1.jpg, wall1.csv, ...
-        output_dir="cvt_images/",
-        slice_size=1024,
-        overlap=0.4,
-        min_area_ratio=0.2
+    # slicer = ImageSlicerForDetection(
+    #     input_dir="images/",          # 含 wall1.jpg, wall1.csv, ...
+    #     output_dir="cvt_images/",
+    #     slice_size=1024,
+    #     overlap=0.4,
+    #     min_area_ratio=0.2
+    # )
+    #slicer.run()
+    create_multi_scale_slices(
+        original_images_dir="images/",
+        output_base_dir="cvt2_images/",
     )
-    slicer.run()

@@ -345,7 +345,7 @@ def predict_single_image(image_path, output_csv_path, model_path=None, class_nam
         class_names = ["wall", "door", "window", "column"]
 
     if model_path is None:
-        model_path = "training_output/best_model.pth"
+        model_path = "weights/best_detect_model.pth"
 
     # 检查文件是否存在
     if not Path(image_path).exists():

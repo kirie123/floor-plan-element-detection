@@ -18,8 +18,8 @@ class IntegratedDetector:
     """集成了目标检测和墙分类的检测器"""
 
     def __init__(self,
-                 detection_model_path: str = "training_output/best_model.pth",
-                 classification_model_path: str = "best_wall_classifier.pth",
+                 detection_model_path: str = "weights/best_detect_model.pth",
+                 classification_model_path: str = "weights/best_wall_classifier.pth",
                  device: str = None):
 
         self.device = torch.device(device if device else
@@ -378,8 +378,8 @@ class DummyDetector(IntegratedDetector):
     """为了兼容性，将IntegratedDetector重命名为DummyDetector"""
 
     def __init__(self,
-                 detection_model_path: str = "training_output/best_model.pth",
-                 classification_model_path: str = "best_wall_classifier.pth"):
+                 detection_model_path: str = "weights/best_detect_model.pth",
+                 classification_model_path: str = "weights/best_wall_classifier.pth"):
         super().__init__(detection_model_path, classification_model_path)
 
     def detect(self, image_path: str) -> List:

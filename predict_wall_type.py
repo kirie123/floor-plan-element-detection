@@ -60,7 +60,7 @@ if __name__ == "__main__":
     wall_classes = [f"WALL{i}" for i in range(1, 24)]
 
     # 初始化预测器
-    predictor = WallTypePredictor('best_wall_classifier.pth', wall_classes)
+    predictor = WallTypePredictor('weights/best_wall_classifier.pth', wall_classes)
 
     # 预测单张图像
     result = predictor.predict("path_to_wall_patch.jpg")
