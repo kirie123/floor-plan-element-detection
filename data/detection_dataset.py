@@ -274,13 +274,55 @@ class DetectionDataset(Dataset):
                 resized_boxes.append([new_xmin, new_ymin, new_xmax, new_ymax])
 
         return resized_image, resized_boxes
+    def get_test_transform(self):
+        return A.Compose([
 
+                # 4. 弹性变换（模拟图纸变形）
+                A.ElasticTransform(
+                    alpha=30,
+                    sigma=5,
+                    alpha_affine=8,
+                    p=0.2
+                ),
+                # 调整尺寸到img_size
+                A.Resize(self.img_size, self.img_size, always_apply=True),
+
+                # 标准化并转换为Tensor
+                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ToTensorV2()
+            ], bbox_params=A.BboxParams(
+                format='pascal_voc',  # 使用[x_min, y_min, x_max, y_max]格式
+                label_fields=['labels']
+            ))
     def get_simple_transform(self):
         """针对建筑平面图的简化增强"""
         return A.Compose([
                 # 颜色增强
                 A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),
-
+                A.OneOf([
+                    # 轻微的非均匀缩放
+                    A.Affine(
+                        scale={"x": (0.4, 1.8), "y": (0.4, 1.8)},  # 横纵独立缩放
+                        translate_percent=(-0.05, 0.05),
+                        rotate=(-10, 10),
+                        shear=(-5, 5),
+                        p=0.5
+                    ),
+                    # 均匀缩放
+                    A.Affine(
+                        scale=(0.8, 1.2),
+                        translate_percent=(-0.05, 0.05),
+                        rotate=(-10, 10),
+                        p=0.5
+                    )
+                ], p=0.3),  # 30%概率应用缩放
+                # 弹性变换（模拟图纸变形）
+                A.ElasticTransform(
+                    alpha=30,
+                    sigma=5,
+                    alpha_affine=8,
+                    p=0.2
+                ),
                 # 几何变换 - 这些会同步调整边界框
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.3),
@@ -295,13 +337,14 @@ class DetectionDataset(Dataset):
                 A.Lambda(name='ColorAugmentation',
                          image=lambda image, **kwargs: self.apply_color_augmentation(image),
                          p=0.8),  # 80%概率应用颜色增强
+
                 # 针对建筑平面图的增强
                 A.GaussNoise(var_limit=(10.0, 50.0), p=0.2),
                 A.Blur(blur_limit=3, p=0.2),
 
+
                 # 调整尺寸到img_size
                 A.Resize(self.img_size, self.img_size, always_apply=True),
-
                 # 标准化并转换为Tensor
                 A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                 ToTensorV2()
@@ -310,122 +353,7 @@ class DetectionDataset(Dataset):
                 label_fields=['labels']
             ))
 
-    def get_enhance_transform(self):
-        return A.Compose([
-                # 基础几何变换
-                A.OneOf([
-                    A.ShiftScaleRotate(
-                        shift_limit=0.1,  # 增加平移幅度
-                        scale_limit=0.2,  # 增加缩放范围
-                        rotate_limit=15,  # 增加旋转角度
-                        border_mode=cv2.BORDER_CONSTANT,
-                        value=0,  # 用黑色填充
-                        p=0.7
-                    ),
-                    A.Affine(
-                        scale=(0.8, 1.2),
-                        translate_percent=(-0.1, 0.1),
-                        rotate=(-15, 15),
-                        shear=(-5, 5),  # 添加剪切变换
-                        p=0.3
-                    )
-                ], p=0.8),
 
-                # 镜像翻转
-                A.HorizontalFlip(p=0.5),
-                A.VerticalFlip(p=0.3),
-
-                # 透视变换 - 模拟不同视角
-                A.Perspective(
-                    scale=(0.05, 0.1),  # 轻微透视
-                    keep_size=True,
-                    p=0.3
-                ),
-
-                # 颜色增强 - 更丰富的颜色变化
-                A.OneOf([
-                    A.ColorJitter(
-                        brightness=0.3,  # 增加亮度变化
-                        contrast=0.3,
-                        saturation=0.3,
-                        hue=0.1,
-                        p=1.0
-                    ),
-                    A.HueSaturationValue(
-                        hue_shift_limit=10,
-                        sat_shift_limit=20,
-                        val_shift_limit=10,
-                        p=1.0
-                    ),
-                    A.RGBShift(
-                        r_shift_limit=20,
-                        g_shift_limit=20,
-                        b_shift_limit=20,
-                        p=1.0
-                    )
-                ], p=0.7),
-
-                # 噪声和模糊 - 模拟不同图像质量
-                A.OneOf([
-                    A.GaussNoise(var_limit=(10.0, 100.0), p=0.5),
-                    A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=0.3),
-                    A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.1, 0.5), p=0.3),
-                ], p=0.4),
-
-                A.OneOf([
-                    A.Blur(blur_limit=3, p=0.5),
-                    A.MotionBlur(blur_limit=5, p=0.3),
-                    A.MedianBlur(blur_limit=3, p=0.2),
-                ], p=0.3),
-
-                # 针对建筑图纸的特殊增强
-                A.OneOf([
-                    # 模拟图纸质量变化
-                    A.RandomGamma(gamma_limit=(80, 120), p=0.5),
-                    A.RandomBrightnessContrast(
-                        brightness_limit=0.2,
-                        contrast_limit=0.2,
-                        p=0.5
-                    ),
-                ], p=0.4),
-
-                # 模拟遮挡和缺失
-                A.OneOf([
-                    A.CoarseDropout(
-                        max_holes=8,
-                        max_height=32,
-                        max_width=32,
-                        min_holes=1,
-                        min_height=8,
-                        min_width=8,
-                        fill_value=0,
-                        p=0.5
-                    ),
-                    A.GridDropout(
-                        unit_size_min=16,
-                        unit_size_max=64,
-                        holes_number_x=4,
-                        holes_number_y=4,
-                        shift_x=0,
-                        shift_y=0,
-                        random_offset=True,
-                        fill_value=0,
-                        p=0.3
-                    )
-                ], p=0.3),
-
-                # 图像质量退化
-                A.ImageCompression(quality_lower=60, quality_upper=95, p=0.2),
-
-                # 标准化
-                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                ToTensorV2()
-            ], bbox_params=A.BboxParams(
-                format='pascal_voc',
-                label_fields=['labels'],
-                min_area=1,  # 确保小目标不被过滤
-                min_visibility=0.1  # 允许部分可见的目标
-            ))
 
     def apply_color_augmentation(self, image, **kwargs):
         """应用自定义颜色增强"""
