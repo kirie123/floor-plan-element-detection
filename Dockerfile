@@ -11,7 +11,7 @@ COPY . .
 # Step 4: 安装依赖
 # 推荐使用requirements.txt来管理依赖，这样可以利用Docker的层缓存机制，加快构建速度。
 # 使用国内镜像源可以大幅提升下载速度。
-RUN pip install --no-cache-dir -r requirements.txt -i [https://pypi.tuna.tsinghua.edu.cn/simple](https://pypi.tuna.tsinghua.edu.cn/simple)
+RUN pip install --no-cache-dir -r requirements.txt
 # Step 5: 赋予 run.sh 执行权限 (非常重要！)
 RUN chmod +x run.sh
 # Step 6: 定义容器启动时要执行的命令

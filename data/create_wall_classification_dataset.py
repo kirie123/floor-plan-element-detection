@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 
-def create_wall_classification_dataset(img_dir, csv_dir, output_dir, min_size=32):
+def create_wall_classification_dataset(img_dir, csv_dir, output_dir, min_size=1):
     """
     从目标检测数据集中提取墙的子图像用于分类任务
 

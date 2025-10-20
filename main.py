@@ -14,29 +14,36 @@ def predict(input_path, output_path):
         classification_model_path="weights/best_wall_classifier.pth"
     )
 
-    # 1. 在这里加载您的模型
     print("模型加载中...")
-    # 2. 读取输入数据
-    # 假设输入是一个名为 data.csv 的文件
-    input_file = os.path.join(input_path, 'data.csv')
-    print(f"正在读取输入文件: {input_file}")
-    #获取待处理图片
+
+    # 修正：正确获取输入目录中的所有 .jpg 文件
     drawing_files = []
+    for filename in os.listdir(input_path):
+        if filename.lower().endswith('.jpg'):
+            drawing_files.append(os.path.join(input_path, filename))
+
+    print(f"找到 {len(drawing_files)} 个图片文件")
+    if not drawing_files:
+        print("警告：未找到任何 .jpg 文件")
+        return
     all_annotations = []
     for drawing_file in drawing_files:
         drawing_path = drawing_file
         img = cv2.imread(drawing_path)
-        h, w = (img.shape[0], img.shape[1]) if img is not None else (3118, 4414)
-        # 3. 进行模型预测
-        # 调用检测器
+        if img is None:
+            print(f"警告：无法读取图片 {drawing_path}")
+            continue
+        h, w = img.shape[0], img.shape[1]
+        print(f"图片分辨率：{h}x{w}")
+        # 进行模型预测
         shapes = detector.detect(drawing_path)
-        print("模型预测完成！")
+        print(f"检测到 {len(shapes)} 个形状")
 
         # 还需要从shapes中过滤掉图例中没有的类别
 
         # 创建 ImageAnnotation 对象
         annotation = ImageAnnotation(
-            image_path=drawing_file,
+            image_path=os.path.basename(drawing_path),  # 只保存文件名
             image_height=h,
             image_width=w,
             shapes=shapes
@@ -45,20 +52,13 @@ def predict(input_path, output_path):
 
     # 保存为 .jsonl
     output_file = os.path.join(output_path, 'results.jsonl')
-    save_image_annotations_to_jsonl(all_annotations, output_file)
-
-
-
-    # 4. 将结果写入指定的输出文件
-    # 假设输出要求为 result.json
-    output_file = os.path.join(output_path, 'result.json')
-    print(f"正在写入结果文件: {output_file}")
-    # 模拟写入一个文件
+    # 确保输出目录存在
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    with open(output_file, 'w') as f:
-        f.write('{"prediction": "success"}')
+    save_image_annotations_to_jsonl(all_annotations, output_file)
+    print(f"结果已保存到: {output_file}")
     print("处理完成！")
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # 接收 run.sh 传入的参数

@@ -97,7 +97,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_dir = "data/classification_data_enhanced/wall_classification"
     batch_size = 16
-    num_epochs = 50
+    num_epochs = 25
 
     # 数据加载
     train_transform, val_transform = get_transforms(224)

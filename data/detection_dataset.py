@@ -334,19 +334,14 @@ class DetectionDataset(Dataset):
                 self.samples.append((img_path, csv_path))
 
         # 使用albumentations进行数据增强（同步处理图像和边界框）
+        self.default_transform = self.get_default_trasform()
         if training:
             self.transform = self.get_simple_transform()
-            self.default_transform = self.get_default_trasform()
             #self.transform = self.get_enhance_transform()
         else:
-            self.transform = A.Compose([
-                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                ToTensorV2()
-            ], bbox_params=A.BboxParams(
-                format='pascal_voc',
-                label_fields=['labels']
-            ))
+            self.transform = self.get_default_trasform()
 
+        #self.transform = self.get_default_trasform()
         print(f"✅ 加载 {len(self.samples)} 个样本")
 
 
@@ -451,6 +446,7 @@ class DetectionDataset(Dataset):
                         translate_percent=(-0.05, 0.05),
                         rotate=(-10, 10),
                         shear=(-3, 3),
+                        cval=255,  # 关键：设置填充为白色
                         p=0.5
                     ),
                     # 均匀缩放
@@ -458,14 +454,17 @@ class DetectionDataset(Dataset):
                         scale=(0.8, 1.2),
                         translate_percent=(-0.05, 0.05),
                         rotate=(-10, 10),
+                        cval=255,  # 关键：设置填充为白色
                         p=0.5
                     )
                 ], p=0.3),  # 30%概率应用缩放
+
                 # 弹性变换（模拟图纸变形）
                 A.ElasticTransform(
                     alpha=15,
                     sigma=3,
                     alpha_affine=5,
+                    fill_value=255,  # 关键：设置填充为白色
                     p=0.2
                 ),
                 # 几何变换 - 这些会同步调整边界框
@@ -476,6 +475,8 @@ class DetectionDataset(Dataset):
                     shift_limit=0.05,  # 轻微平移
                     scale_limit=0.1,  # 轻微缩放
                     rotate_limit=5,  # 小角度旋转
+                    border_mode=cv2.BORDER_CONSTANT,  # 使用常数填充
+                    value=255,  # 关键：填充白色
                     p=0.5
                 ),
                 # 专门的颜色增强
@@ -489,7 +490,7 @@ class DetectionDataset(Dataset):
                 # 在标准化之前添加GridMask
                 A.Lambda(
                     image=lambda image, **kwargs: self.apply_gridmask(image),
-                    p=0.4  # GridMask的应用概率
+                    p=0.5  # GridMask的应用概率
                 ),
                 # 调整尺寸到img_size
                 A.Resize(self.img_size, self.img_size, always_apply=True),
@@ -956,4 +957,4 @@ if __name__ == "__main__":
         training=True
     )
     save_augmented_dir = "vis_images"
-    dataset.save_augmented_samples(save_augmented_dir=save_augmented_dir, num_samples=100)
+    dataset.save_augmented_samples(save_augmented_dir=save_augmented_dir, num_samples=1000)

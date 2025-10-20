@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -123,6 +125,8 @@ class SimpleResNetDetector(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.stride = stride
+        self.img_size = 1024
+        self.map_size = int(self.img_size / stride)
         self.dropout = 0.3
         # 加载预训练ResNet
         if backbone == 'resnet18':
@@ -140,8 +144,8 @@ class SimpleResNetDetector(nn.Module):
         # 通道调整卷积
         self.channel_adjust = nn.Conv2d(in_channels, 256, 1)
 
-        # 上采样到64x64
-        self.upsample = nn.Upsample(size=(64, 64), mode='bilinear', align_corners=False)
+        # 上采样到self.map_size x self.map_size
+        self.upsample = nn.Upsample(size=(self.map_size, self.map_size), mode='bilinear', align_corners=False)
 
         # 共享特征提取
         self.shared_conv = nn.Sequential(
@@ -164,28 +168,41 @@ class SimpleResNetDetector(nn.Module):
         print(f"✅ 初始化简化版 {backbone} 检测模型")
 
     def _init_weights(self):
-        # for m in [self.heatmap_head, self.wh_head, self.offset_head]:
-        #     if isinstance(m, nn.Conv2d):
-        #         nn.init.normal_(m.weight, std=0.01)
-        #         if m.bias is not None:
-        #             nn.init.constant_(m.bias, 0)
-        # 热力图头 - 鼓励更高激活
-        nn.init.normal_(self.heatmap_head.weight, std=0.1)
-        if self.heatmap_head.bias is not None:
-            nn.init.constant_(self.heatmap_head.bias, -2.0)
+        # 热力图头 - 使用更合理的初始化
+        nn.init.normal_(self.heatmap_head.weight, std=0.01)
+        # 计算基于类别不平衡的偏置
+        prior_prob = 0.01  # 假设1%的位置有目标
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        nn.init.constant_(self.heatmap_head.bias, bias_value)
 
-        # 宽高头 - 关键修复：使用更大的初始化来匹配目标范围
-        nn.init.normal_(self.wh_head.weight, std=0.01)  # 增加标准差
-        if self.wh_head.bias is not None:
-            # 根据诊断信息，初始化到目标均值附近
-            nn.init.constant_(self.wh_head.bias, 2.0)  # 初始化为3.0，接近目标均值
+        # 宽高和偏移头 - 使用标准初始化
+        for m in [self.wh_head, self.offset_head]:
+            nn.init.normal_(m.weight, std=0.001)
+            nn.init.constant_(m.bias, 0.0)
 
-        # 偏移头
-        nn.init.normal_(self.offset_head.weight, std=0.01)
-        if self.offset_head.bias is not None:
-            nn.init.constant_(self.offset_head.bias, 0.0)
+        # 共享卷积层使用Kaiming初始化
+        for m in self.shared_conv.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        # # 热力图头 - 鼓励更高激活
+        # nn.init.normal_(self.heatmap_head.weight, std=0.1)
+        # if self.heatmap_head.bias is not None:
+        #     nn.init.constant_(self.heatmap_head.bias, -2.0)
+        #
+        # # 宽高头 - 关键修复：使用更大的初始化来匹配目标范围
+        # nn.init.normal_(self.wh_head.weight, std=0.01)  # 增加标准差
+        # if self.wh_head.bias is not None:
+        #     # 根据诊断信息，初始化到目标均值附近
+        #     nn.init.constant_(self.wh_head.bias, 2.0)  # 初始化为3.0，接近目标均值
+        #
+        # # 偏移头
+        # nn.init.normal_(self.offset_head.weight, std=0.01)
+        # if self.offset_head.bias is not None:
+        #     nn.init.constant_(self.offset_head.bias, 0.0)
+
 
     def forward(self, x):
+        # X为[B, 3, 1024, 1024]
         features = self.backbone(x)  # [B, 512, 32, 32]
         features = self.channel_adjust(features)  # [B, 256, 32, 32]
         features = self.upsample(features)  # [B, 256, 64, 64]  ← 关键修复！

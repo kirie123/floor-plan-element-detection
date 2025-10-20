@@ -329,7 +329,7 @@ class IntegratedDetector:
         print(f"   原图尺寸: {original_w} x {original_h}")
 
         # 2. 切片
-        slices = self.slice_image(image_path, slice_size=1024, overlap=0.1)
+        slices = self.slice_image(image_path, slice_size=1024, overlap=0.2)
 
         # 3. 对每个切片进行目标检测
         slices_detections = []

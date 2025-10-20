@@ -38,7 +38,7 @@ def visualize_detections(image_path, detections, output_path=None):
         # 绘制边界框 - 只画框，不添加标签
         rect = patches.Rectangle(
             (xmin, ymin), width, height,
-            linewidth=2, edgecolor=color, facecolor='none'
+            linewidth=0.5, edgecolor=color, facecolor='none'
         )
         ax.add_patch(rect)
 
@@ -70,11 +70,11 @@ def test_single_image():
 
     # 测试图像路径
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\补充图片\\bc1.jpg"  # 替换为你的测试图像路径
-    image_path = "data/pred_images/dx9_slice_0000_1536.jpg"
-    #image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\图例.jpg"
+    #image_path = "data/pred_images/dx9_slice_0000_1536.jpg"
+    image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\图例.jpg"
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\验证集图片\\dx18.jpg"
     # 进行检测
-    detections = detector.detect(image_path, confidence_threshold=0.3)
+    detections = detector.detect(image_path, confidence_threshold=0.5)
 
     # 打印结果
     print("\n=== 检测结果 ===")

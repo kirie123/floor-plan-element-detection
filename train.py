@@ -144,7 +144,7 @@ def main():
                             collate_fn=custom_collate_fn)
 
     # 模型（先用你的DummyModel测试，后续替换为DINOv3）
-    stride = 16
+    stride = 8
     model = DummyModel(num_classes=num_classes, stride = stride).to(device)
     # 打印总参数量
     total_params = sum(p.numel() for p in model.parameters())
@@ -161,9 +161,9 @@ def main():
     #     {'params': model.wh_head.parameters(), 'lr': 1e-4},
     #     {'params': model.offset_head.parameters(), 'lr': 1e-4},
     # ], weight_decay=1e-3)
-    max_epoch = 500
+    max_epoch = 300
     phase1_epochs = 0  # 阶段1：冻结主干，训练头
-    phase2_epochs = 500  # 阶段2：解冻主干，小学习率
+    phase2_epochs = 300  # 阶段2：解冻主干，小学习率
     #scheduler = CosineAnnealingLR(optimizer, T_max=max_epoch, eta_min=1e-6)
     # 阶段1：冻结主干网络
     print("=== 阶段1：冻结主干网络，只训练检测头 ===")
@@ -199,14 +199,14 @@ def main():
                 {'params': backbone_params, 'lr': 1e-4},  # 主干网络用小学习率
                 {'params': head_params, 'lr': 1e-4}  # 检测头用较大学习率
             ], weight_decay=1e-3)
-            #scheduler = CosineAnnealingLR(optimizer, T_max=phase2_epochs, eta_min=1e-6)
+            scheduler = CosineAnnealingLR(optimizer, T_max=phase2_epochs, eta_min=1e-6)
             # 带热重启的余弦退火
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                optimizer,
-                T_0=10,  # 10个epoch后重启
-                T_mult=2,
-                eta_min=1e-6
-            )
+            # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            #     optimizer,
+            #     T_0=10,  # 10个epoch后重启
+            #     T_mult=2,
+            #     eta_min=1e-6
+            # )
         # 训练
         train_losses = train_one_epoch(model, train_loader, optimizer, device, epoch + 1, stride = stride)
         print(f"训练损失 - 总: {train_losses['total']:.4f}, "
