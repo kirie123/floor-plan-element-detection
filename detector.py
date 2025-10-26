@@ -12,7 +12,7 @@ from data.wall_classifier import WallClassifier, get_transforms
 from models.default_model import DummyModel
 from utils.shape import Shape, ImageAnnotation, save_image_annotations_to_jsonl
 from validate import decode_outputs
-
+from config import ModelConfig as config
 
 class IntegratedDetector:
     """集成了目标检测和墙分类的检测器"""
@@ -20,13 +20,14 @@ class IntegratedDetector:
     def __init__(self,
                  detection_model_path: str = "weights/best_detect_model.pth",
                  classification_model_path: str = "weights/best_wall_classifier.pth",
+                 stride = config.stride,
                  device: str = None):
 
         self.device = torch.device(device if device else
                                    ("cuda" if torch.cuda.is_available() else "cpu"))
-
+        self.stride = stride
         # 加载目标检测模型
-        self.detection_model = DummyModel(num_classes=4).to(self.device)
+        self.detection_model = DummyModel(num_classes=4, stride = stride).to(self.device)
         self.detection_model.load_state_dict(torch.load(detection_model_path, map_location=self.device))
         self.detection_model.eval()
 
@@ -111,7 +112,7 @@ class IntegratedDetector:
             outputs = self.detection_model(input_tensor)
 
         # 解码输出
-        detections = decode_outputs(outputs, confidence_threshold)
+        detections = decode_outputs(outputs, confidence_threshold, stride = self.stride)
         batch_detections = detections[0]  # 取第一个batch
 
         results = []

@@ -1,11 +1,8 @@
 # train.py
 import torch
-from data.detection_dataset import DetectionDataset
+from data.detection_dataset import DetectionDataset, custom_collate_fn
 from loss import detection_loss
-
 from models.default_model import DummyModel
-
-
 from torch.utils.data import DataLoader
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -13,9 +10,10 @@ import time
 import json
 from pathlib import Path
 
+from models.sta_adapter import DINOv3STADetector
 from validate import validate_model, calculate_metrics
-
 from torch.utils.tensorboard import SummaryWriter  # 新增：用于可视化
+from config import ModelConfig as config
 
 def train_one_epoch(model, dataloader, optimizer, device, epoch, print_freq=10, stride = 16):
     model.train()
@@ -79,21 +77,7 @@ def save_checkpoint(model, optimizer, scheduler, epoch, loss, path):
     torch.save(checkpoint, path)
     print(f"✅ 检查点保存: {path}")
 
-def custom_collate_fn(batch):
-    """
-    简单的整理函数，将图像堆叠，目标保持为列表
-    """
-    images = []
-    targets = []
 
-    for image, target in batch:
-        images.append(image)
-        targets.append(target)
-
-    # 堆叠图像
-    images = torch.stack(images, dim=0)
-
-    return images, targets
 
 def freeze_backbone(model):
     """冻结主干网络"""
@@ -144,11 +128,29 @@ def main():
                             collate_fn=custom_collate_fn)
 
     # 模型（先用你的DummyModel测试，后续替换为DINOv3）
-    stride = 8
-    model = DummyModel(num_classes=num_classes, stride = stride).to(device)
+    stride = config.stride
+    # resnet backbone
+    #model = DummyModel(num_classes=num_classes, stride = stride).to(device)
+    # dinov3 backbone
+    model =DINOv3STADetector(num_classes=4).to(device)
     # 打印总参数量
     total_params = sum(p.numel() for p in model.parameters())
     print(f"总参数量: {total_params:,}")
+    is_only_val = False
+    if is_only_val:
+        model.load_state_dict(torch.load("training_output/best_detect_model.pth", map_location=device))
+        model.eval()
+        print("开始验证...")
+        val_losses = validate_model(model, val_loader, device, num_classes, stride=stride)
+        print(f"验证损失 - 总: {val_losses['total']:.4f}, "
+              f"热力图: {val_losses['hm']:.4f}, "
+              f"宽高: {val_losses['wh']:.4f}, "
+              f"偏移: {val_losses['off']:.4f}")
+        # 计算指标
+        metrics = calculate_metrics(model, val_loader, device, class_names, stride=stride)
+        print(f"验证指标 - mAP: {metrics['mAP']:.4f}")
+        for class_name, ap in metrics['AP_per_class'].items():
+            print(f"  {class_name} AP: {ap:.4f}")
 
     # # 冻结主干网络
     # for param in model.backbone.parameters():

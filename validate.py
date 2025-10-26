@@ -5,9 +5,12 @@ import torchvision.transforms as T
 import numpy as np
 from pathlib import Path
 
+from torch.utils.data import DataLoader
+
+from data.detection_dataset import DetectionDataset, custom_collate_fn
 from loss import detection_loss
 from models.default_model import DummyModel
-
+from config import ModelConfig as config
 
 def decode_outputs(outputs, confidence_threshold=0.3, nms_threshold=0.5, stride=16, img_size=1024):
     """
@@ -488,22 +491,37 @@ if __name__ == "__main__":
     if result_df is not None:
         print("预测结果预览:")
         print(result_df.head())
-
-    # 批量预测
-    image_dir = "test_images/"
-    output_dir = "batch_predictions/"
-
-    batch_results = predict_multiple_images(
-        image_dir=image_dir,
-        output_dir=output_dir,
-        model_path="training_output/best_model.pth",
-        confidence_threshold=0.3
+    has_validation = True
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    class_names = ["wall", "door", "window", "column"]
+    num_classes = len(class_names)
+    model_path = "weights/best_detect_model.pth"
+    stride = config.stride
+    val_dataset = DetectionDataset(
+        img_dir="data/val_images",  # 你需要准备验证集
+        csv_dir="data/val_images",
+        class_names=class_names,
+        training=False
     )
-
-    # 统计批量预测结果
-    total_detections = 0
-    for image_name, df in batch_results.items():
-        if df is not None:
-            total_detections += len(df)
-
-    print(f"批量预测总计检测到 {total_detections} 个目标")
+    val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0,
+                            collate_fn=custom_collate_fn)
+    # 加载模型
+    model = DummyModel(num_classes=num_classes, stride = stride).to(device)
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"✅ 模型加载成功: {model_path}")
+    except Exception as e:
+        print(f"❌ 模型加载失败: {e}")
+    if has_validation:
+        print("开始验证...")
+        val_losses = validate_model(model, val_loader, device, num_classes, stride=stride)
+        print(f"验证损失 - 总: {val_losses['total']:.4f}, "
+              f"热力图: {val_losses['hm']:.4f}, "
+              f"宽高: {val_losses['wh']:.4f}, "
+              f"偏移: {val_losses['off']:.4f}")
+        # 新增：记录验证损失到TensorBoard
+        # 计算指标
+        metrics = calculate_metrics(model, val_loader, device, class_names, stride=stride)
+        print(f"验证指标 - mAP: {metrics['mAP']:.4f}")
+        for class_name, ap in metrics['AP_per_class'].items():
+            print(f"  {class_name} AP: {ap:.4f}")

@@ -121,8 +121,8 @@ def analyze_dataset_balance(dataset_dir):
 
 if __name__ == "__main__":
     # 配置路径
-    img_dir = "cvt_images"  # 你的目标检测图像目录
-    csv_dir = "cvt_images"  # 你的CSV标注目录
+    img_dir = "cvt2_images"  # 你的目标检测图像目录
+    csv_dir = "cvt2_images"  # 你的CSV标注目录
     output_dir = "classification_data"
 
     # 创建数据集

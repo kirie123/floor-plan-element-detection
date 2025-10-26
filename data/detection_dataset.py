@@ -12,7 +12,21 @@ import numpy as np
 import random
 from PIL import Image, ImageEnhance, ImageOps
 
+def custom_collate_fn(batch):
+    """
+    简单的整理函数，将图像堆叠，目标保持为列表
+    """
+    images = []
+    targets = []
 
+    for image, target in batch:
+        images.append(image)
+        targets.append(target)
+
+    # 堆叠图像
+    images = torch.stack(images, dim=0)
+
+    return images, targets
 
 class GridMask:
     """GridMask数据增强 - 网格状遮挡"""
@@ -313,7 +327,7 @@ class DetectionDataset(Dataset):
         self.img_size = img_size
         self.use_mosaic = training and True
         self.use_color_aug = training and True
-        self.use_mixup = training and False
+        self.use_cutmix = training and True
         self.mixup_alpha = 0.5  # MixUp参数
         self.mosaic_prob = 0.75 # 75%概率使用Mosaic，可以根据效果调整
         self.use_gridmask = training and True
@@ -344,7 +358,17 @@ class DetectionDataset(Dataset):
         #self.transform = self.get_default_trasform()
         print(f"✅ 加载 {len(self.samples)} 个样本")
 
+    def __len__(self):
+        return len(self.samples)
 
+    def __getitem__(self, idx):
+        # 如果是训练模式且使用MixUp，随机选择另一张图像
+        if self.training and self.use_cutmix and random.random() < 0.2:
+            return self.get_cutmix_item_strict(idx)
+
+        # 否则返回单张图像（应用完整transform）
+        img_path, csv_path = self.samples[idx]
+        return self.load_single_sample(idx, img_path, csv_path, apply_transform=True)
 
     def apply_gridmask(self, image):
         """应用GridMask增强"""
@@ -765,9 +789,6 @@ class DetectionDataset(Dataset):
         else:
             return torch.zeros((0, 4), dtype=torch.float32), torch.zeros((0,), dtype=torch.int64)
 
-    def __len__(self):
-        return len(self.samples)
-
     def load_single_sample(self, idx, img_path, csv_path, apply_transform=True):
         # 使用OpenCV加载图像（albumentations需要numpy数组）
         image = cv2.imread(str(img_path))
@@ -837,14 +858,6 @@ class DetectionDataset(Dataset):
 
         return image, target
 
-    def __getitem__(self, idx):
-        # 如果是训练模式且使用MixUp，随机选择另一张图像
-        if self.training and self.use_mixup and random.random() < 0.2:
-            return self.get_cutmix_item_strict(idx)
-
-        # 否则返回单张图像（应用完整transform）
-        img_path, csv_path = self.samples[idx]
-        return self.load_single_sample(idx, img_path, csv_path, apply_transform=True)
 
     def tensor_to_numpy(self, tensor_image):
         """

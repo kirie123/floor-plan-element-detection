@@ -166,8 +166,8 @@ def create_multi_scale_slices(original_images_dir, output_base_dir, scales=[0.5,
     为原始高分辨率图像创建多尺度切片
     """
     for scale in scales:
-        #output_dir = Path(output_base_dir) / f"scale_{scale}"
-        output_dir = Path(output_base_dir) / f"scale_all"
+        output_dir = Path(output_base_dir) / f"scale_{scale}"
+        #output_dir = Path(output_base_dir) / f"scale_all"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         slicer = ImageSlicerForDetection(
