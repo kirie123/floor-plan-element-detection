@@ -67,13 +67,14 @@ def visualize_detections(image_path, detections, output_path=None):
 def test_single_image():
     """测试单张图像"""
     stride = 16
-    detector = IntegratedDetector(stride = stride, detection_model_path = "training_output/best_detect_model.pth")
+    detector = IntegratedDetector(stride = stride, detection_model_path = "weights/best_detect_model_old.pth")
 
     # 测试图像路径
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\补充图片\\bc1.jpg"  # 替换为你的测试图像路径
     #image_path = "data/pred_images/dx9_slice_0000_1536.jpg"
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\图例.jpg"
     image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\验证集图片\\dx18.jpg"
+    image_path = "F:\\项目数据\\中石化比赛\\以图找图工程图纸智能识别\\初赛发布\\企业微信截图_1761544491195.png"
     #image_path = "data/cvt2_images/scale_1.0/dx9_slice_0000_1024.jpg"
     # 进行检测
     detections = detector.detect(image_path, confidence_threshold=0.38)

@@ -245,7 +245,7 @@ class DINOv3STADetector(nn.Module):
         with torch.no_grad():
             outputs = self.backbone(pixel_values, output_hidden_states=True)
             # 取 Block5,8,11（索引 5,8,11）
-            selected_blocks = [outputs.hidden_states[i] for i in [5, 8, 11]]
+            selected_blocks = [outputs.hidden_states[i] for i in [17, 20, 23]]
         # 2. 转换为特征图 [B, D, H, W]
         # 假设 patch_size = 16
         h_patches = H_img // 16
@@ -255,7 +255,7 @@ class DINOv3STADetector(nn.Module):
         dinov3_feats = []
         for feat in selected_blocks:
             # feat: [B, N, 1024], N = (H/16 * W/16) + 1
-            patch_feat = feat[:, :num_patches, :]  # 去掉 class token 以及 register token
+            patch_feat = feat[:, -num_patches:, :]  # 去掉 class token 以及 register token
             feat_map = patch_feat.reshape(B, h_patches, w_patches, -1).permute(0, 3, 1, 2)  # [B, 1024, H, W]
             dinov3_feats.append(feat_map)
 
@@ -288,7 +288,7 @@ class DINOv3STADetector(nn.Module):
         p4_up = F.interpolate(p4, size=p3.shape[-2:], mode='nearest')  # [B,256,64,64]
         p2_down = F.interpolate(p2, scale_factor=0.5, mode='bilinear')
         p3_fused = p2_down + p3 + p4_up  # 或 torch.cat + 1x1 conv（更重）
-
+        #p3_fused = p3
         shared_features = self.shared_conv(p3_fused)  # [B, 256, 64, 64]
         heatmap = self.heatmap_head(shared_features)  # [B, 4, 64, 64]
         wh = self.wh_head(shared_features)  # [B, 2, 64, 64]

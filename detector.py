@@ -10,6 +10,7 @@ import json
 
 from data.wall_classifier import WallClassifier, get_transforms
 from models.default_model import DummyModel
+from models.sta_adapter import DINOv3STADetector
 from utils.shape import Shape, ImageAnnotation, save_image_annotations_to_jsonl
 from validate import decode_outputs
 from config import ModelConfig as config
@@ -28,6 +29,7 @@ class IntegratedDetector:
         self.stride = stride
         # 加载目标检测模型
         self.detection_model = DummyModel(num_classes=4, stride = stride).to(self.device)
+       # self.detection_model = DINOv3STADetector(num_classes=4).to(device)
         self.detection_model.load_state_dict(torch.load(detection_model_path, map_location=self.device))
         self.detection_model.eval()
 

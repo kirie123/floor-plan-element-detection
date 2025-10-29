@@ -107,17 +107,19 @@ def main():
     # 新增：TensorBoard日志记录器
     writer = SummaryWriter(log_dir=output_dir / "tensorboard_logs")
     # 数据集
+    train_dir = "data/cvt_images"
+    val_dir = "data/val_images"
     train_dataset = DetectionDataset(
-        img_dir="data/cvt_images",
-        csv_dir="data/cvt_images",
+        img_dir=train_dir,
+        csv_dir=train_dir,
         class_names=class_names,
         training=True
     )
     has_validation = True
     # 验证集（如果有的话）
     val_dataset = DetectionDataset(
-        img_dir="data/val_images",  # 你需要准备验证集
-        csv_dir="data/val_images",
+        img_dir=val_dir,  # 你需要准备验证集
+        csv_dir=val_dir,
         class_names=class_names,
         training=False
     )
@@ -136,7 +138,7 @@ def main():
     # 打印总参数量
     total_params = sum(p.numel() for p in model.parameters())
     print(f"总参数量: {total_params:,}")
-    is_only_val = False
+    is_only_val = True
     if is_only_val:
         model.load_state_dict(torch.load("training_output/best_detect_model.pth", map_location=device))
         model.eval()
@@ -198,8 +200,8 @@ def main():
                 else:
                     head_params.append(param)
             optimizer = optim.AdamW([
-                {'params': backbone_params, 'lr': 1e-4},  # 主干网络用小学习率
-                {'params': head_params, 'lr': 1e-4}  # 检测头用较大学习率
+                {'params': backbone_params, 'lr': 2.5e-5},  # 主干网络用小学习率
+                {'params': head_params, 'lr': 5e-4}  # 检测头用较大学习率
             ], weight_decay=1e-3)
             scheduler = CosineAnnealingLR(optimizer, T_max=phase2_epochs, eta_min=1e-6)
             # 带热重启的余弦退火
